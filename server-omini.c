@@ -30,6 +30,7 @@ typedef struct {
     int id;  /* ID del usuario, corresponde a la posición en el array */
     Tarea tareas[MAX_TAREAS];
     int contador_tareas;
+    int contador_ids_tareas; /* Contador para asignar IDs únicos a las tareas */
 } Usuario;
 
 /* Lista global de usuarios */
@@ -67,23 +68,7 @@ void listar_ips(int puerto) {
 /* Funciones para gestionar tareas de un usuario */
 void agregar_tarea(Usuario *usuario, char *descripcion) {
     if (usuario->contador_tareas < MAX_TAREAS) {
-        int new_id = 1;
-        bool id_unique = false;
-
-        /* Buscar un ID único */
-        while (!id_unique) {
-            id_unique = true;
-            for (int i = 0; i < usuario->contador_tareas; i++) {
-                if (usuario->tareas[i].id == new_id) {
-                    id_unique = false;
-                    new_id++;
-                    break;
-                }
-            }
-        }
-
-        /* Asignar el ID único a la nueva tarea */
-        usuario->tareas[usuario->contador_tareas].id = new_id;
+        usuario->tareas[usuario->contador_tareas].id = usuario->contador_ids_tareas++;
         strcpy(usuario->tareas[usuario->contador_tareas].descripcion, descripcion);
         usuario->tareas[usuario->contador_tareas].completada = false;
         usuario->contador_tareas++;
@@ -150,6 +135,7 @@ void *manejar_cliente(void *arg) {
                 int nuevo_id = contador_usuarios;
                 usuarios[nuevo_id].id = nuevo_id;
                 usuarios[nuevo_id].contador_tareas = 0;
+                usuarios[nuevo_id].contador_ids_tareas = 1; /* Inicializar contador de IDs de tareas */
                 contador_usuarios++;
                 /* Enviar OK y el ID al cliente */
                 sprintf(respuesta, "OK %d", nuevo_id);
