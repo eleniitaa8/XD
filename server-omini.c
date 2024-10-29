@@ -29,8 +29,8 @@ typedef struct {
 typedef struct {
     int id;  /* ID del usuario, corresponde a la posición en el array */
     Tarea tareas[MAX_TAREAS];
-    int contador_tareas;
-    int contador_ids_tareas; /* Contador para asignar IDs únicos a las tareas */
+    int contador_tareas;       /* Número de tareas activas */
+    int contador_ids_tareas;   /* Contador para asignar IDs únicos a las tareas */
 } Usuario;
 
 /* Lista global de usuarios */
@@ -68,15 +68,27 @@ void listar_ips(int puerto) {
 /* Funciones para gestionar tareas de un usuario */
 void agregar_tarea(Usuario *usuario, char *descripcion) {
     if (usuario->contador_tareas < MAX_TAREAS) {
-        usuario->tareas[usuario->contador_tareas].id = usuario->contador_ids_tareas++;
-        strcpy(usuario->tareas[usuario->contador_tareas].descripcion, descripcion);
-        usuario->tareas[usuario->contador_tareas].completada = false;
-        usuario->contador_tareas++;
+        int i;
+        /* Buscar la primera posición libre (id == 0) */
+        for (i = 0; i < MAX_TAREAS; i++) {
+            if (usuario->tareas[i].id == 0) {
+                usuario->tareas[i].id = usuario->contador_ids_tareas++;
+                strncpy(usuario->tareas[i].descripcion, descripcion, sizeof(usuario->tareas[i].descripcion) - 1);
+                usuario->tareas[i].descripcion[sizeof(usuario->tareas[i].descripcion) - 1] = '\0';  /* Asegurar terminación */
+                usuario->tareas[i].completada = false;
+                usuario->contador_tareas++;
+                break;
+            }
+        }
+        if (i == MAX_TAREAS) {
+            /* No hay espacio disponible */
+            // Puedes manejar este caso si lo deseas
+        }
     }
 }
 
 void completar_tarea(Usuario *usuario, int id) {
-    for (int i = 0; i < usuario->contador_tareas; i++) {
+    for (int i = 0; i < MAX_TAREAS; i++) {
         if (usuario->tareas[i].id == id) {
             usuario->tareas[i].completada = true;
             break;
@@ -85,12 +97,12 @@ void completar_tarea(Usuario *usuario, int id) {
 }
 
 void eliminar_tarea(Usuario *usuario, int id) {
-    for (int i = 0; i < usuario->contador_tareas; i++) {
+    for (int i = 0; i < MAX_TAREAS; i++) {
         if (usuario->tareas[i].id == id) {
-            /* Desplazar las tareas hacia arriba para eliminar el hueco */
-            for (int j = i; j < usuario->contador_tareas - 1; j++) {
-                usuario->tareas[j] = usuario->tareas[j + 1];
-            }
+            /* Marcar la tarea como inactiva */
+            usuario->tareas[i].id = 0;
+            usuario->tareas[i].descripcion[0] = '\0';
+            usuario->tareas[i].completada = false;
             usuario->contador_tareas--;
             break;
         }
@@ -100,12 +112,14 @@ void eliminar_tarea(Usuario *usuario, int id) {
 /* Función corregida para consultar tareas de un usuario */
 void consultar_tareas(Usuario *usuario, char *respuesta) {
     strcpy(respuesta, "Tareas:\n");
-    for (int i = 0; i < usuario->contador_tareas; i++) {
-        char linea[256];
-        sprintf(linea, "ID: %d | Descripción: %s | Completada: %s\n",
-                usuario->tareas[i].id, usuario->tareas[i].descripcion, 
-                usuario->tareas[i].completada ? "Sí" : "No");
-        strcat(respuesta, linea);
+    for (int i = 0; i < MAX_TAREAS; i++) {
+        if (usuario->tareas[i].id != 0) {  /* Solo listar tareas activas */
+            char linea[256];
+            sprintf(linea, "ID: %d | Descripción: %s | Completada: %s\n",
+                    usuario->tareas[i].id, usuario->tareas[i].descripcion,
+                    usuario->tareas[i].completada ? "Sí" : "No");
+            strcat(respuesta, linea);
+        }
     }
 }
 
@@ -127,6 +141,12 @@ void *manejar_cliente(void *arg) {
         char descripcion[200];
         char respuesta[MIDA_PAQUET];
 
+        /* Inicializar variables para evitar problemas */
+        comando[0] = '\0';
+        descripcion[0] = '\0';
+        respuesta[0] = '\0';
+
+        /* Extraer el comando principal */
         sscanf(paquet, "%s", comando);
 
         if (strcmp(comando, "REGISTER") == 0) {
@@ -166,70 +186,100 @@ void *manejar_cliente(void *arg) {
             pthread_mutex_unlock(&mutex_usuarios);
         }
         else if (strcmp(comando, "CREATE_TASK") == 0) {
-            sscanf(paquet, "CREATE_TASK %d %[^\n]", &id_usuario, descripcion);
-            pthread_mutex_lock(&mutex_usuarios);
-            if (id_usuario >=0 && id_usuario < contador_usuarios) {
-                agregar_tarea(&usuarios[id_usuario], descripcion);
-                strcpy(respuesta, "Tarea creada exitosamente.");
-                printf("Tarea creada para usuario %d: %s\n", id_usuario, descripcion);
-            } else {
-                strcpy(respuesta, "ERROR ID de usuario inválido");
-                printf("Error al crear tarea: ID de usuario %d inválido.\n", id_usuario);
+            /* Extraer el ID de usuario y la descripción de la tarea */
+            int items = sscanf(paquet, "CREATE_TASK %d %[^\n]", &id_usuario, descripcion);
+            if (items < 2) {
+                strcpy(respuesta, "ERROR Formato de CREATE_TASK inválido");
             }
-            pthread_mutex_unlock(&mutex_usuarios);
+            else {
+                pthread_mutex_lock(&mutex_usuarios);
+                if (id_usuario >=0 && id_usuario < contador_usuarios) {
+                    agregar_tarea(&usuarios[id_usuario], descripcion);
+                    strcpy(respuesta, "Tarea creada exitosamente.");
+                    printf("Tarea creada para usuario %d: %s\n", id_usuario, descripcion);
+                } else {
+                    strcpy(respuesta, "ERROR ID de usuario inválido");
+                    printf("Error al crear tarea: ID de usuario %d inválido.\n", id_usuario);
+                }
+                pthread_mutex_unlock(&mutex_usuarios);
+            }
             /* Enviar respuesta */
             send(client_sock, respuesta, strlen(respuesta), 0);
         }
         else if (strcmp(comando, "COMPLETE_TASK") == 0) {
-            sscanf(paquet, "COMPLETE_TASK %d %d", &id_usuario, &id_tarea);
-            pthread_mutex_lock(&mutex_usuarios);
-            if (id_usuario >=0 && id_usuario < contador_usuarios) {
-                completar_tarea(&usuarios[id_usuario], id_tarea);
-                sprintf(respuesta, "Tarea con ID %d completada exitosamente.", id_tarea);
-                printf("Tarea con ID %d completada para usuario %d.\n", id_tarea, id_usuario);
-            } else {
-                strcpy(respuesta, "ERROR ID de usuario inválido");
-                printf("Error al completar tarea: ID de usuario %d inválido.\n", id_usuario);
+            /* Extraer el ID de usuario y el ID de la tarea */
+            int items = sscanf(paquet, "COMPLETE_TASK %d %d", &id_usuario, &id_tarea);
+            if (items < 2) {
+                strcpy(respuesta, "ERROR Formato de COMPLETE_TASK inválido");
             }
-            pthread_mutex_unlock(&mutex_usuarios);
+            else {
+                pthread_mutex_lock(&mutex_usuarios);
+                if (id_usuario >=0 && id_usuario < contador_usuarios) {
+                    completar_tarea(&usuarios[id_usuario], id_tarea);
+                    sprintf(respuesta, "Tarea con ID %d completada exitosamente.", id_tarea);
+                    printf("Tarea con ID %d completada para usuario %d.\n", id_tarea, id_usuario);
+                } else {
+                    strcpy(respuesta, "ERROR ID de usuario inválido");
+                    printf("Error al completar tarea: ID de usuario %d inválido.\n", id_usuario);
+                }
+                pthread_mutex_unlock(&mutex_usuarios);
+            }
             /* Enviar respuesta */
             send(client_sock, respuesta, strlen(respuesta), 0);
         }
         else if (strcmp(comando, "DELETE_TASK") == 0) {
-            sscanf(paquet, "DELETE_TASK %d %d", &id_usuario, &id_tarea);
-            pthread_mutex_lock(&mutex_usuarios);
-            if (id_usuario >=0 && id_usuario < contador_usuarios) {
-                eliminar_tarea(&usuarios[id_usuario], id_tarea);
-                sprintf(respuesta, "Tarea con ID %d eliminada exitosamente.", id_tarea);
-                printf("Tarea con ID %d eliminada para usuario %d.\n", id_tarea, id_usuario);
-            } else {
-                strcpy(respuesta, "ERROR ID de usuario inválido");
-                printf("Error al eliminar tarea: ID de usuario %d inválido.\n", id_usuario);
+            /* Extraer el ID de usuario y el ID de la tarea */
+            int items = sscanf(paquet, "DELETE_TASK %d %d", &id_usuario, &id_tarea);
+            if (items < 2) {
+                strcpy(respuesta, "ERROR Formato de DELETE_TASK inválido");
             }
-            pthread_mutex_unlock(&mutex_usuarios);
+            else {
+                pthread_mutex_lock(&mutex_usuarios);
+                if (id_usuario >=0 && id_usuario < contador_usuarios) {
+                    eliminar_tarea(&usuarios[id_usuario], id_tarea);
+                    sprintf(respuesta, "Tarea con ID %d eliminada exitosamente.", id_tarea);
+                    printf("Tarea con ID %d eliminada para usuario %d.\n", id_tarea, id_usuario);
+                } else {
+                    strcpy(respuesta, "ERROR ID de usuario inválido");
+                    printf("Error al eliminar tarea: ID de usuario %d inválido.\n", id_usuario);
+                }
+                pthread_mutex_unlock(&mutex_usuarios);
+            }
             /* Enviar respuesta */
             send(client_sock, respuesta, strlen(respuesta), 0);
         }
         else if (strcmp(comando, "LIST_TASKS") == 0) {
-            sscanf(paquet, "LIST_TASKS %d", &id_usuario);
-            pthread_mutex_lock(&mutex_usuarios);
-            if (id_usuario >=0 && id_usuario < contador_usuarios) {
-                consultar_tareas(&usuarios[id_usuario], respuesta);
-                printf("Listado de tareas enviado para usuario %d.\n", id_usuario);
-            } else {
-                strcpy(respuesta, "ERROR ID de usuario inválido");
-                printf("Error al listar tareas: ID de usuario %d inválido.\n", id_usuario);
+            /* Extraer el ID de usuario */
+            int items = sscanf(paquet, "LIST_TASKS %d", &id_usuario);
+            if (items < 1) {
+                strcpy(respuesta, "ERROR Formato de LIST_TASKS inválido");
             }
-            pthread_mutex_unlock(&mutex_usuarios);
+            else {
+                pthread_mutex_lock(&mutex_usuarios);
+                if (id_usuario >=0 && id_usuario < contador_usuarios) {
+                    consultar_tareas(&usuarios[id_usuario], respuesta);
+                    printf("Listado de tareas enviado para usuario %d.\n", id_usuario);
+                } else {
+                    strcpy(respuesta, "ERROR ID de usuario inválido");
+                    printf("Error al listar tareas: ID de usuario %d inválido.\n", id_usuario);
+                }
+                pthread_mutex_unlock(&mutex_usuarios);
+            }
             /* Enviar respuesta */
             send(client_sock, respuesta, strlen(respuesta), 0);
         }
         else if (strcmp(comando, "EXIT") == 0) {
-            sscanf(paquet, "EXIT %d", &id_usuario);
-            sprintf(respuesta, "Desconectando usuario %d.\n", id_usuario);
-            send(client_sock, respuesta, strlen(respuesta), 0);
-            printf("Usuario %d ha cerrado la conexión.\n", id_usuario);
-            conectado = false;
+            /* Extraer el ID de usuario */
+            int items = sscanf(paquet, "EXIT %d", &id_usuario);
+            if (items < 1) {
+                strcpy(respuesta, "ERROR Formato de EXIT inválido");
+            }
+            else {
+                sprintf(respuesta, "Desconectando usuario %d.\n", id_usuario);
+                send(client_sock, respuesta, strlen(respuesta), 0);
+                printf("Usuario %d ha cerrado la conexión.\n", id_usuario);
+                conectado = false;
+            }
         }
         else {
             strcpy(respuesta, "ERROR Comando no reconocido");
@@ -266,7 +316,7 @@ int main(int argc, char **argv) {
         /* Configuramos los datos del socket del servidor */
         servidor_addr.sin_family = AF_INET;
         servidor_addr.sin_addr.s_addr = INADDR_ANY;  /* Cualquier NIC */
-        servidor_addr.sin_port = htons(puerto);  /* Puerto donde estará escuchando el servidor */
+        servidor_addr.sin_port = htons(puerto);      /* Puerto donde estará escuchando el servidor */
 
         /* Enlazamos el socket */
         if (bind(sockfd, (struct sockaddr *)&servidor_addr, sizeof(servidor_addr)) < 0) {
