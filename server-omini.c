@@ -67,7 +67,23 @@ void listar_ips(int puerto) {
 /* Funciones para gestionar tareas de un usuario */
 void agregar_tarea(Usuario *usuario, char *descripcion) {
     if (usuario->contador_tareas < MAX_TAREAS) {
-        usuario->tareas[usuario->contador_tareas].id = usuario->contador_tareas + 1;
+        int new_id = 1;
+        bool id_unique = false;
+
+        /* Buscar un ID único */
+        while (!id_unique) {
+            id_unique = true;
+            for (int i = 0; i < usuario->contador_tareas; i++) {
+                if (usuario->tareas[i].id == new_id) {
+                    id_unique = false;
+                    new_id++;
+                    break;
+                }
+            }
+        }
+
+        /* Asignar el ID único a la nueva tarea */
+        usuario->tareas[usuario->contador_tareas].id = new_id;
         strcpy(usuario->tareas[usuario->contador_tareas].descripcion, descripcion);
         usuario->tareas[usuario->contador_tareas].completada = false;
         usuario->contador_tareas++;
