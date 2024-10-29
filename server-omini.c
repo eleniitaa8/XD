@@ -6,6 +6,8 @@
 #include <unistd.h>
 #include <pthread.h>
 #include <stdbool.h>
+#include <ifaddrs.h>
+#include <arpa/inet.h>
 
 #include <sys/socket.h>
 #include <sys/types.h>
@@ -36,6 +38,31 @@ int contador_usuarios = 0;
 
 /* Mutex para proteger la lista de usuarios */
 pthread_mutex_t mutex_usuarios = PTHREAD_MUTEX_INITIALIZER;
+
+/* Función para listar las IPs del servidor */
+void listar_ips(int puerto) {
+    struct ifaddrs *ifaddr, *ifa;
+    char ip[INET_ADDRSTRLEN];
+
+    if (getifaddrs(&ifaddr) == -1) {
+        perror("getifaddrs");
+        return;
+    }
+
+    printf("Servidor escuchando en las siguientes direcciones IP en el puerto %d:\n", puerto);
+
+    for (ifa = ifaddr; ifa != NULL; ifa = ifa->ifa_next) {
+        if (ifa->ifa_addr == NULL)
+            continue;
+        if (ifa->ifa_addr->sa_family == AF_INET) {  // Solo IPv4
+            struct sockaddr_in *sa = (struct sockaddr_in *)ifa->ifa_addr;
+            inet_ntop(AF_INET, &(sa->sin_addr), ip, INET_ADDRSTRLEN);
+            printf(" - %s:%d (%s)\n", ip, puerto, ifa->ifa_name);
+        }
+    }
+
+    freeifaddrs(ifaddr);
+}
 
 /* Funciones para gestionar tareas de un usuario */
 void agregar_tarea(Usuario *usuario, char *descripcion) {
@@ -69,13 +96,14 @@ void eliminar_tarea(Usuario *usuario, int id) {
     }
 }
 
+/* Función corregida para consultar tareas de un usuario */
 void consultar_tareas(Usuario *usuario, char *respuesta) {
     strcpy(respuesta, "Tareas:\n");
     for (int i = 0; i < usuario->contador_tareas; i++) {
         char linea[256];
         sprintf(linea, "ID: %d | Descripción: %s | Completada: %s\n",
-                usuario->tareas[i].id, usuarios[i].tareas[i].descripcion, 
-                usuarios[i].tareas[i].completada ? "Sí" : "No");
+                usuario->tareas[i].id, usuario->tareas[i].descripcion, 
+                usuario->tareas[i].completada ? "Sí" : "No");
         strcat(respuesta, linea);
     }
 }
@@ -224,6 +252,7 @@ int main(int argc, char **argv) {
         struct sockaddr_in servidor_addr, cliente_addr;
         socklen_t cliente_addr_len = sizeof(cliente_addr);
         pthread_t tid;
+        int puerto = atoi(argv[1]);
 
         /* Crear un socket TCP */
         sockfd = socket(AF_INET, SOCK_STREAM, 0);
@@ -235,7 +264,7 @@ int main(int argc, char **argv) {
         /* Configuramos los datos del socket del servidor */
         servidor_addr.sin_family = AF_INET;
         servidor_addr.sin_addr.s_addr = INADDR_ANY;  /* Cualquier NIC */
-        servidor_addr.sin_port = htons(atoi(argv[1]));  /* Puerto donde estará escuchando el servidor */
+        servidor_addr.sin_port = htons(puerto);  /* Puerto donde estará escuchando el servidor */
 
         /* Enlazamos el socket */
         if (bind(sockfd, (struct sockaddr *)&servidor_addr, sizeof(servidor_addr)) < 0) {
@@ -244,13 +273,16 @@ int main(int argc, char **argv) {
             exit(EXIT_FAILURE);
         }
 
+        /* Listar las IPs del servidor */
+        listar_ips(puerto);
+
         /* Escuchar conexiones entrantes */
         if (listen(sockfd, 5) < 0) {
             perror("Error al escuchar conexiones");
             close(sockfd);
             exit(EXIT_FAILURE);
         }
-        printf("Servidor operativo en el puerto %d!\n", atoi(argv[1]));
+        printf("Servidor operativo en el puerto %d!\n", puerto);
 
         /* Aceptar conexiones entrantes */
         while (1) {
