@@ -14,6 +14,7 @@
 
 #define MIDA_PAQUET 256  /* Tamaño máximo del paquete */
 #define MAX_TAREAS 100    /* Número máximo de tareas que se pueden gestionar */
+#define MAX_USUARIOS 100  /* Número máximo de usuarios que se pueden registrar */
 
 /* Estructura para las tareas */
 typedef struct {
@@ -22,9 +23,19 @@ typedef struct {
     int completada;
 } Tarea;
 
+/* Estructura para los usuarios */
+typedef struct {
+    int id;
+    char nombre[200];
+} Usuario;
+
 /* Lista global de tareas */
 Tarea tareas[MAX_TAREAS];
 int contador_tareas = 0;
+
+/* Lista global de usuarios */
+Usuario usuarios[MAX_USUARIOS];
+int contador_usuarios = 0;
 
 void agregar_tarea(char *descripcion) {
     if (contador_tareas < MAX_TAREAS) {
@@ -66,6 +77,30 @@ void consultar_tareas(char *respuesta) {
     }
 }
 
+int registrar_usuario(char *nombre, char *respuesta) {
+    if (contador_usuarios < MAX_USUARIOS) {
+        usuarios[contador_usuarios].id = contador_usuarios + 1;
+        strcpy(usuarios[contador_usuarios].nombre, nombre);
+        contador_usuarios++;
+        sprintf(respuesta, "OK %d", usuarios[contador_usuarios - 1].id);
+        return 1;
+    } else {
+        strcpy(respuesta, "Error: Límite de usuarios alcanzado");
+        return 0;
+    }
+}
+
+int iniciar_sesion(char *nombre, char *respuesta) {
+    for (int i = 0; i < contador_usuarios; i++) {
+        if (strcmp(usuarios[i].nombre, nombre) == 0) {
+            sprintf(respuesta, "OK %d", usuarios[i].id);
+            return 1;
+        }
+    }
+    strcpy(respuesta, "Error: Usuario no encontrado");
+    return 0;
+}
+
 int main(int argc, char **argv) {
     if (argc == 2) {
         int s;  /* El socket */
@@ -98,7 +133,7 @@ int main(int argc, char **argv) {
                 printf("Paquete recibido!\n");
 
                 /* Procesamos el comando recibido */
-                char comando[20], descripcion[200];
+                char comando[20], descripcion[200], nombre[200];
                 int id;
                 sscanf(paquet, "%s", comando);
 
@@ -120,6 +155,14 @@ int main(int argc, char **argv) {
                 } else if (strcmp(comando, "4") == 0) {
                     /* Consultar tareas */
                     consultar_tareas(paquet);
+                } else if (strcmp(comando, "registrar:") == 0) {
+                    /* Registrar usuario */
+                    sscanf(paquet, "1 registrar: %[^\n]", nombre);
+                    registrar_usuario(nombre, paquet);
+                } else if (strcmp(comando, "iniciar sesion:") == 0) {
+                    /* Iniciar sesión */
+                    sscanf(paquet, "2 iniciar sesion: %[^\n]", nombre);
+                    iniciar_sesion(nombre, paquet);
                 } else {
                     sprintf(paquet, "Comando no reconocido\n");
                 }
@@ -135,5 +178,4 @@ int main(int argc, char **argv) {
     } else {
         printf("El número de parámetros no es el correcto!\n");
     }
-    return 0;
 }

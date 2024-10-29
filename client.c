@@ -32,15 +32,17 @@ int main(int argc, char **argv)
         contacte_servidor.sin_port = htons(atoi(argv[2]));  /* Puerto en el que escucha el servidor */
 
         int opcion = 0;
+        char id[50];  /* Buffer to store the received ID */
 
         bool registro = 1;
-        while (registro!=0)
+        while (registro != 0)
         {
             printf("\n--- Gestor de Tareas Colaborativas ---\n");
             printf("Selecciona una opción:\n");
             printf("1) Registrarse\n");
             printf("2) Iniciar Sesión\n");
-            fscanf("%d", &opcion);
+            scanf("%d", &opcion);
+            getchar();  /* Consumir el salto de línea que queda en el buffer después de scanf */
             switch(opcion) 
             {
                 case 1: /* Registrarse */
@@ -49,11 +51,10 @@ int main(int argc, char **argv)
                     
                     printf("Nombre de usuario: ");
                     fgets(nombre, sizeof(nombre), stdin);
-                    // comprobar que no exista
                     nombre[strcspn(nombre, "\n")] = 0;  /* Eliminar el salto de línea */
-                    
+
                     /* Montamos el comando para enviar al servidor */
-                    sprintf(paquet, "%s", nombre);
+                    sprintf(paquet, "1 registrar: %s", nombre);
             
                     sendto(s, paquet, MIDA_PAQUET, 0, (struct sockaddr *)&contacte_servidor, sizeof(contacte_servidor));
                     printf("Paquete enviado! Esperando respuesta...\n");
@@ -62,8 +63,9 @@ int main(int argc, char **argv)
                     recvfrom(s, paquet, MIDA_PAQUET, 0, NULL, NULL);  /* NULL -> No es necesario saber desde dónde llega */
                     printf("Respuesta del servidor: %s\n", paquet);
 
-                    if (strcmp(paquet, "OK") == 0) {
-                        printf("Registro exitoso.\n");
+                    /* Parse the response to check if registration was successful and extract the ID */
+                    if (sscanf(paquet, "OK %s", id) == 1) {
+                        printf("Registro exitoso. Tu ID es: %s\n", id);
                         registro = 0;  /* Salir del bucle de registro */
                     } else {
                         printf("Error: %s\n", paquet);
@@ -73,13 +75,12 @@ int main(int argc, char **argv)
                 case 2: /* Iniciar sesión */
                 {
                     char nombre[200];
-                    printf("nombre de usuario\n");
+                    printf("Nombre de usuario: ");
                     fgets(nombre, sizeof(nombre), stdin);
-                    // comprobar que no exista
                     nombre[strcspn(nombre, "\n")] = 0;  /* Eliminar el salto de línea */
                     
                     /* Montamos el comando para enviar al servidor */
-                    sprintf(paquet, "%s", nombre);
+                    sprintf(paquet, "2 iniciar sesion: %s", nombre);
             
                     sendto(s, paquet, MIDA_PAQUET, 0, (struct sockaddr *)&contacte_servidor, sizeof(contacte_servidor));
                     printf("Paquete enviado! Esperando respuesta...\n");
@@ -88,27 +89,24 @@ int main(int argc, char **argv)
                     recvfrom(s, paquet, MIDA_PAQUET, 0, NULL, NULL);  /* NULL -> No es necesario saber desde dónde llega */
                     printf("Respuesta del servidor: %s\n", paquet);
 
-                    if (strcmp(paquet, "OK") == 0) {
-                        printf("Registro exitoso.\n");
+                    /* Parse the response to check if login was successful and extract the ID */
+                    if (sscanf(paquet, "OK %s", id) == 1) {
+                        printf("Inicio de sesión exitoso. Tu ID es: %s\n", id);
                         registro = 0;  /* Salir del bucle de registro */
                     } else {
                         printf("Error: %s\n", paquet);
                     }
-                    
                     break;
                 }
-
+                default:
+                    printf("Opción no válida. Inténtalo de nuevo.\n");
+                    break;
             }
         }
-
-
 
         opcion = 0;
         while (opcion != 5)  /* Menú para seleccionar la operación de gestión de tareas */
         {
-         
-            
-
             printf("\n--- Gestor de Tareas Colaborativas ---\n");
             printf("Selecciona una opción:\n");
             printf("1) Crear tarea\n");
@@ -136,23 +134,23 @@ int main(int argc, char **argv)
 
                 case 2:  /* Completar tarea */
                     {
-                        int id;
+                        int id_tarea;
                         printf("Introduce el ID de la tarea a completar: ");
-                        scanf("%d", &id);
+                        scanf("%d", &id_tarea);
 
                         /* Montamos el comando para enviar al servidor */
-                        sprintf(paquet, "2 completar tarea: %d", id);
+                        sprintf(paquet, "2 completar tarea: %d", id_tarea);
                     }
                     break;
 
                 case 3:  /* Eliminar tarea */
                     {
-                        int id;
+                        int id_tarea;
                         printf("Introduce el ID de la tarea a eliminar: ");
-                        scanf("%d", &id);
+                        scanf("%d", &id_tarea);
 
                         /* Montamos el comando para enviar al servidor */
-                        sprintf(paquet, "3 eliminar tarea: %d", id);
+                        sprintf(paquet, "3 eliminar tarea: %d", id_tarea);
                     }
                     break;
 
