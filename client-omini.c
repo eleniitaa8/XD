@@ -1,4 +1,4 @@
-/* CLIENTE: Gestor de tareas colaborativas */
+/* CLIENTE: Gestor de Tareas Colaborativas */
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -60,7 +60,7 @@ int main(int argc, char **argv)
             printf("Opción: ");
             if (scanf("%d", &opcion) != 1) {
                 printf("Entrada no válida. Inténtalo de nuevo.\n");
-                // Limpiar el buffer de entrada
+                /* Limpiar el buffer de entrada */
                 while (getchar() != '\n');
                 continue;
             }
@@ -105,7 +105,7 @@ int main(int argc, char **argv)
                     printf("Introduce tu ID de usuario: ");
                     if (scanf("%d", &login_id) != 1) {
                         printf("Entrada no válida. Inténtalo de nuevo.\n");
-                        // Limpiar el buffer de entrada
+                        /* Limpiar el buffer de entrada */
                         while (getchar() != '\n');
                         continue;
                     }
@@ -162,7 +162,7 @@ int main(int argc, char **argv)
             printf("Opción: ");
             if (scanf("%d", &opcion) != 1) {
                 printf("Entrada no válida. Inténtalo de nuevo.\n");
-                // Limpiar el buffer de entrada
+                /* Limpiar el buffer de entrada */
                 while (getchar() != '\n');
                 continue;
             }
@@ -188,7 +188,7 @@ int main(int argc, char **argv)
                         printf("Introduce el ID de la tarea a completar: ");
                         if (scanf("%d", &id) != 1) {
                             printf("Entrada no válida. Inténtalo de nuevo.\n");
-                            // Limpiar el buffer de entrada
+                            /* Limpiar el buffer de entrada */
                             while (getchar() != '\n');
                             continue;
                         }
@@ -205,7 +205,7 @@ int main(int argc, char **argv)
                         printf("Introduce el ID de la tarea a eliminar: ");
                         if (scanf("%d", &id) != 1) {
                             printf("Entrada no válida. Inténtalo de nuevo.\n");
-                            // Limpiar el buffer de entrada
+                            /* Limpiar el buffer de entrada */
                             while (getchar() != '\n');
                             continue;
                         }

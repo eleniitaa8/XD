@@ -1,4 +1,4 @@
-/* SERVIDOR: Gestor de tareas colaborativas */
+/* SERVIDOR: Gestor de Tareas Colaborativas Asíncrono */
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -14,9 +14,9 @@
 #include <netinet/in.h>
 #include <arpa/inet.h>
 
-#define MIDA_PAQUET 1024  /* Tamaño máximo del paquete */
-#define MAX_TAREAS 100     /* Número máximo de tareas por usuario */
-#define MAX_USUARIOS 100   /* Número máximo de usuarios */
+#define MIDA_PAQUET 1024     /* Tamaño máximo del paquete */
+#define MAX_TAREAS 100       /* Número máximo de tareas por usuario */
+#define MAX_USUARIOS 100     /* Número máximo de usuarios */
 
 /* Estructura para las tareas */
 typedef struct {
@@ -27,10 +27,11 @@ typedef struct {
 
 /* Estructura para los usuarios */
 typedef struct {
-    int id;  /* ID del usuario, corresponde a la posición en el array */
-    Tarea tareas[MAX_TAREAS];
+    int id;                     /* ID del usuario, corresponde a la posición en el array */
+    Tarea tareas[MAX_TAREAS];  /* Array de tareas */
     int contador_tareas;       /* Número de tareas activas */
     int contador_ids_tareas;   /* Contador para asignar IDs únicos a las tareas */
+    pthread_mutex_t mutex;     /* Mutex para sincronizar operaciones de este usuario */
 } Usuario;
 
 /* Lista global de usuarios */
@@ -55,7 +56,7 @@ void listar_ips(int puerto) {
     for (ifa = ifaddr; ifa != NULL; ifa = ifa->ifa_next) {
         if (ifa->ifa_addr == NULL)
             continue;
-        if (ifa->ifa_addr->sa_family == AF_INET) {  // Solo IPv4
+        if (ifa->ifa_addr->sa_family == AF_INET) {  /* Solo IPv4 */
             struct sockaddr_in *sa = (struct sockaddr_in *)ifa->ifa_addr;
             inet_ntop(AF_INET, &(sa->sin_addr), ip, INET_ADDRSTRLEN);
             printf(" - %s:%d (%s)\n", ip, puerto, ifa->ifa_name);
@@ -66,57 +67,56 @@ void listar_ips(int puerto) {
 }
 
 /* Funciones para gestionar tareas de un usuario */
-void agregar_tarea(Usuario *usuario, char *descripcion) {
-    if (usuario->contador_tareas < MAX_TAREAS) {
-        int i;
-        /* Buscar la primera posición libre (id == 0) */
-        for (i = 0; i < MAX_TAREAS; i++) {
-            if (usuario->tareas[i].id == 0) {
-                usuario->tareas[i].id = usuario->contador_ids_tareas++;
-                strncpy(usuario->tareas[i].descripcion, descripcion, sizeof(usuario->tareas[i].descripcion) - 1);
-                usuario->tareas[i].descripcion[sizeof(usuario->tareas[i].descripcion) - 1] = '\0';  /* Asegurar terminación */
-                usuario->tareas[i].completada = false;
-                usuario->contador_tareas++;
-                break;
-            }
-        }
-        if (i == MAX_TAREAS) {
-            /* No hay espacio disponible */
-            // Puedes manejar este caso si lo deseas
+
+/* Agregar una tarea */
+bool agregar_tarea(Usuario *usuario, char *descripcion) {
+    for (int i = 0; i < MAX_TAREAS; i++) {
+        if (usuario->tareas[i].id == 0) {  /* Posición libre */
+            usuario->tareas[i].id = usuario->contador_ids_tareas++;
+            strncpy(usuario->tareas[i].descripcion, descripcion, sizeof(usuario->tareas[i].descripcion) - 1);
+            usuario->tareas[i].descripcion[sizeof(usuario->tareas[i].descripcion) - 1] = '\0';  /* Asegurar terminación */
+            usuario->tareas[i].completada = false;
+            usuario->contador_tareas++;
+            return true;
         }
     }
+    return false;  /* No hay espacio para más tareas */
 }
 
-void completar_tarea(Usuario *usuario, int id) {
+/* Completar una tarea */
+bool completar_tarea(Usuario *usuario, int id) {
     for (int i = 0; i < MAX_TAREAS; i++) {
         if (usuario->tareas[i].id == id) {
             usuario->tareas[i].completada = true;
-            break;
+            return true;
         }
     }
+    return false;  /* Tarea no encontrada */
 }
 
-void eliminar_tarea(Usuario *usuario, int id) {
+/* Eliminar una tarea */
+bool eliminar_tarea(Usuario *usuario, int id) {
     for (int i = 0; i < MAX_TAREAS; i++) {
         if (usuario->tareas[i].id == id) {
-            /* Marcar la tarea como inactiva */
-            usuario->tareas[i].id = 0;
+            usuario->tareas[i].id = 0;             /* Marcar como inactiva */
             usuario->tareas[i].descripcion[0] = '\0';
             usuario->tareas[i].completada = false;
             usuario->contador_tareas--;
-            break;
+            return true;
         }
     }
+    return false;  /* Tarea no encontrada */
 }
 
-/* Función corregida para consultar tareas de un usuario */
+/* Consultar tareas */
 void consultar_tareas(Usuario *usuario, char *respuesta) {
     strcpy(respuesta, "Tareas:\n");
     for (int i = 0; i < MAX_TAREAS; i++) {
-        if (usuario->tareas[i].id != 0) {  /* Solo listar tareas activas */
+        if (usuario->tareas[i].id != 0) {  /* Solo tareas activas */
             char linea[256];
             sprintf(linea, "ID: %d | Descripción: %s | Completada: %s\n",
-                    usuario->tareas[i].id, usuario->tareas[i].descripcion,
+                    usuario->tareas[i].id,
+                    usuario->tareas[i].descripcion,
                     usuario->tareas[i].completada ? "Sí" : "No");
             strcat(respuesta, linea);
         }
@@ -155,7 +155,8 @@ void *manejar_cliente(void *arg) {
                 int nuevo_id = contador_usuarios;
                 usuarios[nuevo_id].id = nuevo_id;
                 usuarios[nuevo_id].contador_tareas = 0;
-                usuarios[nuevo_id].contador_ids_tareas = 1; /* Inicializar contador de IDs de tareas */
+                usuarios[nuevo_id].contador_ids_tareas = 1;  /* Inicializar contador de IDs de tareas */
+                pthread_mutex_init(&usuarios[nuevo_id].mutex, NULL);  /* Inicializar mutex del usuario */
                 contador_usuarios++;
                 /* Enviar OK y el ID al cliente */
                 sprintf(respuesta, "OK %d", nuevo_id);
@@ -172,7 +173,7 @@ void *manejar_cliente(void *arg) {
         else if (strcmp(comando, "LOGIN") == 0) {
             sscanf(paquet, "LOGIN %d", &id_usuario);
             pthread_mutex_lock(&mutex_usuarios);
-            if (id_usuario >=0 && id_usuario < contador_usuarios) {
+            if (id_usuario >= 0 && id_usuario < contador_usuarios) {
                 /* Enviar OK */
                 strcpy(respuesta, "OK");
                 send(client_sock, respuesta, strlen(respuesta), 0);
@@ -193,10 +194,19 @@ void *manejar_cliente(void *arg) {
             }
             else {
                 pthread_mutex_lock(&mutex_usuarios);
-                if (id_usuario >=0 && id_usuario < contador_usuarios) {
-                    agregar_tarea(&usuarios[id_usuario], descripcion);
-                    strcpy(respuesta, "Tarea creada exitosamente.");
-                    printf("Tarea creada para usuario %d: %s\n", id_usuario, descripcion);
+                if (id_usuario >= 0 && id_usuario < contador_usuarios) {
+                    Usuario *usuario = &usuarios[id_usuario];
+                    pthread_mutex_lock(&usuario->mutex);  /* Bloquear mutex del usuario */
+                    bool exito = agregar_tarea(usuario, descripcion);
+                    if (exito) {
+                        strcpy(respuesta, "Tarea creada exitosamente.");
+                        printf("Tarea creada para usuario %d: %s\n", id_usuario, descripcion);
+                    }
+                    else {
+                        strcpy(respuesta, "ERROR No hay espacio para más tareas.");
+                        printf("Error al crear tarea: No hay espacio para más tareas para el usuario %d.\n", id_usuario);
+                    }
+                    pthread_mutex_unlock(&usuario->mutex);  /* Desbloquear mutex del usuario */
                 } else {
                     strcpy(respuesta, "ERROR ID de usuario inválido");
                     printf("Error al crear tarea: ID de usuario %d inválido.\n", id_usuario);
@@ -214,10 +224,19 @@ void *manejar_cliente(void *arg) {
             }
             else {
                 pthread_mutex_lock(&mutex_usuarios);
-                if (id_usuario >=0 && id_usuario < contador_usuarios) {
-                    completar_tarea(&usuarios[id_usuario], id_tarea);
-                    sprintf(respuesta, "Tarea con ID %d completada exitosamente.", id_tarea);
-                    printf("Tarea con ID %d completada para usuario %d.\n", id_tarea, id_usuario);
+                if (id_usuario >= 0 && id_usuario < contador_usuarios) {
+                    Usuario *usuario = &usuarios[id_usuario];
+                    pthread_mutex_lock(&usuario->mutex);  /* Bloquear mutex del usuario */
+                    bool exito = completar_tarea(usuario, id_tarea);
+                    if (exito) {
+                        sprintf(respuesta, "Tarea con ID %d completada exitosamente.", id_tarea);
+                        printf("Tarea con ID %d completada para usuario %d.\n", id_tarea, id_usuario);
+                    }
+                    else {
+                        strcpy(respuesta, "ERROR Tarea no encontrada.");
+                        printf("Error al completar tarea: Tarea con ID %d no encontrada para usuario %d.\n", id_tarea, id_usuario);
+                    }
+                    pthread_mutex_unlock(&usuario->mutex);  /* Desbloquear mutex del usuario */
                 } else {
                     strcpy(respuesta, "ERROR ID de usuario inválido");
                     printf("Error al completar tarea: ID de usuario %d inválido.\n", id_usuario);
@@ -235,10 +254,19 @@ void *manejar_cliente(void *arg) {
             }
             else {
                 pthread_mutex_lock(&mutex_usuarios);
-                if (id_usuario >=0 && id_usuario < contador_usuarios) {
-                    eliminar_tarea(&usuarios[id_usuario], id_tarea);
-                    sprintf(respuesta, "Tarea con ID %d eliminada exitosamente.", id_tarea);
-                    printf("Tarea con ID %d eliminada para usuario %d.\n", id_tarea, id_usuario);
+                if (id_usuario >= 0 && id_usuario < contador_usuarios) {
+                    Usuario *usuario = &usuarios[id_usuario];
+                    pthread_mutex_lock(&usuario->mutex);  /* Bloquear mutex del usuario */
+                    bool exito = eliminar_tarea(usuario, id_tarea);
+                    if (exito) {
+                        sprintf(respuesta, "Tarea con ID %d eliminada exitosamente.", id_tarea);
+                        printf("Tarea con ID %d eliminada para usuario %d.\n", id_tarea, id_usuario);
+                    }
+                    else {
+                        strcpy(respuesta, "ERROR Tarea no encontrada.");
+                        printf("Error al eliminar tarea: Tarea con ID %d no encontrada para usuario %d.\n", id_tarea, id_usuario);
+                    }
+                    pthread_mutex_unlock(&usuario->mutex);  /* Desbloquear mutex del usuario */
                 } else {
                     strcpy(respuesta, "ERROR ID de usuario inválido");
                     printf("Error al eliminar tarea: ID de usuario %d inválido.\n", id_usuario);
@@ -256,9 +284,12 @@ void *manejar_cliente(void *arg) {
             }
             else {
                 pthread_mutex_lock(&mutex_usuarios);
-                if (id_usuario >=0 && id_usuario < contador_usuarios) {
-                    consultar_tareas(&usuarios[id_usuario], respuesta);
+                if (id_usuario >= 0 && id_usuario < contador_usuarios) {
+                    Usuario *usuario = &usuarios[id_usuario];
+                    pthread_mutex_lock(&usuario->mutex);  /* Bloquear mutex del usuario */
+                    consultar_tareas(usuario, respuesta);
                     printf("Listado de tareas enviado para usuario %d.\n", id_usuario);
+                    pthread_mutex_unlock(&usuario->mutex);  /* Desbloquear mutex del usuario */
                 } else {
                     strcpy(respuesta, "ERROR ID de usuario inválido");
                     printf("Error al listar tareas: ID de usuario %d inválido.\n", id_usuario);
