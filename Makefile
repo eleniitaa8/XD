@@ -2,7 +2,7 @@
 CC = gcc
 
 # Flags de compilación
-CFLAGS = -Wall -Wextra -g
+CFLAGS = -Wall -Wextra -g -O3
 
 # Obtén todos los archivos .c en el directorio actual
 SOURCES = $(wildcard *.c)
